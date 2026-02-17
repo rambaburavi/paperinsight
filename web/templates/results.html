@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>PaperInsight · Key Insights</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+
+<body>
+    <div class="app-container">
+
+        <!-- NAVBAR -->
+        <header class="navbar">
+            <h1 class="logo">PaperInsight</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/">Upload Paper</a>
+                <a href="/results" class="active">Key Insights</a>
+                <a href="/feedback">Feedback</a>
+            </nav>
+        </header>
+
+        <!-- HERO -->
+        <section class="hero">
+            <h2>Research Paper Insights</h2>
+            <p>AI-generated decision dashboard · Tailored to <b>{{ level }}</b> level</p>
+        </section>
+
+        <!-- Paper at a Glance -->
+        <section class="card">
+            <h3> Paper at a Glance</h3>
+            <ul class="insight-list">
+                <li><strong>Problem:</strong> {{ result.abstract.problem }}</li>
+                <li><strong>Dataset:</strong> {{ result.abstract.dataset }}</li>
+                <li><strong>Method:</strong> {{ result.abstract.method }}</li>
+                <li><strong>Model:</strong> {{ result.abstract.model }}</li>
+                <li><strong>Evaluation Metrics:</strong> {{ result.abstract.evaluation_metrics }}</li>
+                <li><strong>Best Result:</strong> {{ result.abstract.best_result }}</li>
+                <li><strong>Application Domain:</strong> {{ result.abstract.application_domain }}</li>
+            </ul>
+        </section>
+
+        <!-- Contributions -->
+        <section class="card">
+            <h3> Key Contributions</h3>
+
+            <p><strong>Primary Contributions</strong></p>
+            <ul class="insight-list">
+                {% for item in result.contributions.primary_contributions %}
+                <li>
+                    {% if item.contribution %}
+                    {{ item.contribution }}
+                    {% else %}
+                    {{ item }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+
+            </ul>
+
+            <p><strong>Secondary Contributions</strong></p>
+            <ul class="insight-list">
+                {% for item in result.contributions.secondary_contributions %}
+                <li>
+                    {% if item.contribution %}
+                    {{ item.contribution }}
+                    {% else %}
+                    {{ item }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+
+            <p><strong>Performance Summary</strong></p>
+
+
+            <ul class="insight-list">
+                {% for item in result.contributions.performance_summary %}
+                <li>
+                    {% if item.metric and item.value %}
+                    <strong>{{ item.metric }}:</strong> {{ item.value }}
+                    {% elif item.accuracy and item.model %}
+                    <strong>{{ item.model }}:</strong> {{ item.accuracy }}
+                    {% else %}
+                    {{ item }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+
+
+            <canvas id="performanceChart" height="120" style="margin-top:20px;"></canvas>
+
+        </section>
+
+        <!-- Limitations -->
+        <section class="card warning">
+            <h3> Limitations & Risk Zones</h3>
+
+            <p><strong>Data Limitations</strong></p>
+            <ul class="insight-list">
+                {% for item in result.limitations.data_limitations %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+
+            <p><strong>Methodological Risks</strong></p>
+            <ul class="insight-list">
+                {% for item in result.limitations.methodological_risks %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+
+            <p><strong>Generalization Risks</strong></p>
+            <ul class="insight-list">
+                {% for item in result.limitations.generalization_risks %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+
+            <p><strong>Key Assumptions</strong></p>
+            <ul class="insight-list">
+                {% for item in result.limitations.key_assumptions %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <!-- Decision -->
+        <section class="card decision">
+            <h3> Final Decision Summary</h3>
+
+            <ul class="insight-list">
+                <li><strong>Reliability:</strong> {{ result.explanation.reliability }}</li>
+                <li><strong>Confidence Level:</strong> {{ result.explanation.confidence_level }}</li>
+            </ul>
+
+            <p><strong>When to Use</strong></p>
+            <ul class="insight-list">
+                {% for item in result.explanation.when_to_use %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+
+            <p><strong>When NOT to Use</strong></p>
+            <ul class="insight-list">
+                {% for item in result.explanation.when_not_to_use %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <footer class="footer">
+            © 2026 PaperInsight · Intelligent Research Paper Understanding System
+        </footer>
+
+    </div>
+
+    <!-- ✅ UPDATED SMART CHART SCRIPT -->
+    <script>
+        const performanceData = {{ result.contributions.performance_summary | tojson | safe }};
+
+        if (performanceData && performanceData.length > 0) {
+
+            const metricMap = {};
+
+            performanceData.forEach(item => {
+
+                let metricName = "";
+                let rawValue = null;
+
+                // Format 1: {metric:"Accuracy", value:"98.4%"}
+                if (item.metric && item.value) {
+                    metricName = item.metric.toLowerCase();
+                    rawValue = item.value;
+                }
+
+                // Format 2: {accuracy:"98.4%", model:"..."}
+                else if (item.accuracy) {
+                    metricName = "accuracy";
+                    rawValue = item.accuracy;
+                }
+
+                // Format 3: plain string "Accuracy: 94%"
+                else if (typeof item === "string" && item.includes(":")) {
+                    const parts = item.split(":");
+                    metricName = parts[0].trim().toLowerCase();
+                    rawValue = parts[1].trim();
+                }
+
+                if (rawValue) {
+
+                    // remove symbols %, >, <, spaces
+                    const cleaned = rawValue.toString().replace(/[^\d.]/g, "");
+                    let numeric = parseFloat(cleaned);
+
+                    if (!isNaN(numeric)) {
+
+                        // convert 0.90 → 90
+                        if (numeric <= 1) {
+                            numeric = numeric * 100;
+                        }
+
+                        // keep highest per metric
+                        if (!metricMap[metricName] || numeric > metricMap[metricName]) {
+                            metricMap[metricName] = numeric;
+                        }
+                    }
+                }
+
+            });
+
+            const labels = Object.keys(metricMap).map(m => m.toUpperCase());
+            const values = Object.values(metricMap);
+
+            if (labels.length > 0) {
+
+                const ctx = document.getElementById('performanceChart').getContext('2d');
+
+                const gradient1 = ctx.createLinearGradient(0, 0, 0, 400);
+                gradient1.addColorStop(0, '#c084fc');
+                gradient1.addColorStop(1, '#7c4dff');
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Best Performance (%)',
+                            data: values,
+                            backgroundColor: labels.map(() => gradient1),
+                            hoverBackgroundColor: '#e0c3ff',
+                            borderRadius: 14
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        animation: {
+                            duration: 1600,
+                            easing: 'easeOutBack'
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,270 @@
+/* ========== GLOBAL ========== */
+body {
+    margin: 0;
+    font-family: "Inter", "Segoe UI", sans-serif;
+    background: radial-gradient(circle at top, #15152c, #0b0b16);
+    color: #e6e6f0;
+}
+
+.app-container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 28px;
+}
+
+/* ========== NAVBAR ========== */
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #2a2a40;
+    padding-bottom: 16px;
+}
+
+.logo {
+    color: #a678ff;
+    font-size: 26px;
+    font-weight: 600;
+}
+
+.navbar a {
+    color: #cfcfe6;
+    margin-left: 22px;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.navbar a:hover {
+    color: #a678ff;
+}
+
+/* ========== HERO ========== */
+.hero {
+    margin: 52px 0 40px;
+}
+
+.hero h2 {
+    font-size: 36px;
+    color: #ffffff;
+    margin-bottom: 12px;
+}
+
+.hero p {
+    max-width: 720px;
+    color: #b9b9dd;
+    font-size: 17px;
+    line-height: 1.6;
+}
+
+/* ========== CARDS ========== */
+.card {
+    background: linear-gradient(145deg, #181832, #121226);
+    border: 1px solid #2d2d4d;
+    border-radius: 18px;
+    padding: 30px;
+    margin-bottom: 32px;
+}
+
+/* ========== UPLOAD BOX ========== */
+.upload-box {
+    display: block;
+    border: 2px dashed #663cba;
+    border-radius: 14px;
+    padding: 38px;
+    text-align: center;
+    cursor: pointer;
+    margin-bottom: 36px;
+    /* 🔥 KEY FIX */
+    color: #d6ccff;
+    transition: background 0.2s ease;
+}
+
+.upload-box:hover {
+    background-color: #1f1f3d;
+}
+
+/* ========== LABELS & INPUTS ========== */
+.label {
+    color: #b9b9dd;
+    margin-bottom: 8px;
+    margin-top: 10px;
+    /* 🔥 PREVENT OVERLAP */
+    display: block;
+    font-size: 14px;
+}
+
+select,
+input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    background-color: #0b0b16;
+    color: #ffffff;
+    border: 1px solid #3a3a66;
+    border-radius: 10px;
+    margin-bottom: 22px;
+    font-size: 14px;
+}
+
+select:focus,
+input[type="text"]:focus {
+    outline: none;
+    border-color: #a678ff;
+}
+
+/* ========== BUTTONS ========== */
+.primary-btn {
+    background: linear-gradient(135deg, #a678ff, #7c4dff);
+    color: white;
+    border: none;
+    padding: 12px 26px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.primary-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(166, 120, 255, 0.3);
+}
+
+.secondary-btn {
+    background: transparent;
+    border: 1px solid #a678ff;
+    color: #a678ff;
+    padding: 10px 22px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#loader-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(10, 10, 25, 0.95);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    color: #ffffff;
+}
+
+.loader {
+    border: 6px solid #2d2d4d;
+    border-top: 6px solid #a678ff;
+    border-radius: 50%;
+    width: 55px;
+    height: 55px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+}
+
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+
+/* ========== Q&A ========== */
+.qa-form {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.qa-note {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #9a9ab8;
+}
+
+.card {
+    position: relative;
+    overflow: hidden;
+}
+
+.card::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 20px;
+    padding: 2px;
+    background: linear-gradient(270deg, #a678ff, #7c4dff, #a678ff);
+    background-size: 400% 400%;
+    animation: glowBorder 6s ease infinite;
+    z-index: -1;
+}
+
+@keyframes glowBorder {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+
+/* ========== RESULT TEXT ========== */
+.content-text {
+    font-size: 15px;
+    line-height: 1.85;
+    color: #e6e6ff;
+}
+
+/* ========== SECTION HEADINGS ========== */
+.card h3 {
+    margin-bottom: 14px;
+    color: #ffffff;
+    font-size: 20px;
+}
+
+/* ========== FOOTER ========== */
+.footer {
+    text-align: center;
+    margin-top: 56px;
+    color: #8f8fb3;
+    font-size: 13px;
+}
+
+/* Insight lists */
+.insight-list {
+    margin: 12px 0 0 18px;
+    padding: 0;
+}
+
+.insight-list li {
+    margin-bottom: 10px;
+    line-height: 1.6;
+    color: #e6e6ff;
+}
+
+/* Special cards */
+.card.warning {
+    border-left: 4px solid #ff6b6b;
+}
+
+.card.decision {
+    border-left: 4px solid #7c4dff;
+}
+
+/* Active nav */
+.navbar a.active {
+    color: #a678ff;
+    font-weight: 600;
+}

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>PaperInsight</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="app-container">
+
+        <header class="navbar">
+            <h1 class="logo">PaperInsight</h1>
+            <nav>
+                <a href="/" class="active">Home</a>
+                <a href="/">Upload Paper</a>
+                <a href="/results">Key Insights</a>
+                <a href="/feedback">Feedback</a>
+            </nav>
+        </header>
+
+        <section class="hero">
+            <h2>Understand Research Papers Effortlessly</h2>
+            <p>
+                AI-powered system that extracts true contributions,
+                limitations, and explanations tailored to your knowledge level.
+            </p>
+        </section>
+
+        <section class="card">
+
+            <form action="/analyze" method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
+
+                <!-- Drag & Drop Upload Box -->
+                <label for="paper-upload" class="upload-box">
+                    <input type="file" id="paper-upload" name="paper" required hidden>
+                    <span id="upload-text">Drag & Drop or Click to Upload Paper</span>
+                </label>
+
+                <!-- Explanation Level -->
+                <label class="label">Explanation Level</label>
+                <select name="level">
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                </select>
+
+                <!-- Button -->
+                <button type="submit" class="primary-btn">Analyze Paper</button>
+
+            </form>
+
+        </section>
+
+
+        <!-- LOADER -->
+        <div id="loader-overlay" style="display:none;">
+            <div class="loader"></div>
+            <p>Analyzing paper... Please wait</p>
+        </div>
+
+        <footer class="footer">
+            © 2026 PaperInsight · Intelligent Research Paper Understanding System
+        </footer>
+
+    </div>
+
+    <script>
+        function showLoader() {
+            document.getElementById("loader-overlay").style.display = "flex";
+        }
+    </script>
+    <script>
+        const uploadInput = document.getElementById("paper-upload");
+        const uploadBox = document.querySelector(".upload-box");
+        const uploadText = document.getElementById("upload-text");
+
+        uploadBox.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadBox.style.background = "#1f1f3d";
+        });
+
+        uploadBox.addEventListener("dragleave", () => {
+            uploadBox.style.background = "";
+        });
+
+        uploadBox.addEventListener("drop", (e) => {
+            e.preventDefault();
+            uploadInput.files = e.dataTransfer.files;
+            uploadText.innerText = e.dataTransfer.files[0].name;
+        });
+
+        uploadInput.addEventListener("change", () => {
+            uploadText.innerText = uploadInput.files[0].name;
+        });
+
+        function showLoader() {
+            document.getElementById("loader-overlay").style.display = "flex";
+        }
+    </script>
+
+
+</body>
+
+</html>
