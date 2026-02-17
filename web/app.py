@@ -12,9 +12,9 @@ from core.normalize_text import normalize
 from core.build_chunks import build_structured_chunks
 from core.llm import call_llm
 
-from core.embedder import Embedder
-from core.vector_store import VectorStore
-from core.retriever import retrieve_semantic_chunks
+# from core.embedder import Embedder
+# from core.vector_store import VectorStore
+# from core.retriever import retrieve_semantic_chunks
 
 from agents.section_agent import SectionUnderstandingAgent
 from agents.contribution_agent import ContributionExtractionAgent
@@ -295,17 +295,17 @@ def analyze():
 
 
     # -------- Embeddings for Q&A --------
-    embedder = Embedder()
-    valid_chunks = [c for c in chunks if c.get("text", "").strip()]
-    texts = [c["text"] for c in valid_chunks]
+    # embedder = Embedder()
+    # valid_chunks = [c for c in chunks if c.get("text", "").strip()]
+    # texts = [c["text"] for c in valid_chunks]
 
-    embeddings = embedder.embed(texts)
-    vector_store = VectorStore(dim=embeddings.shape[1])
-    vector_store.add(embeddings, valid_chunks)
+    # embeddings = embedder.embed(texts)
+    # vector_store = VectorStore(dim=embeddings.shape[1])
+    # vector_store.add(embeddings, valid_chunks)
 
-    stored_chunks = valid_chunks
-    stored_embedder = embedder
-    stored_vector_store = vector_store
+    # stored_chunks = valid_chunks
+    # stored_embedder = embedder
+    # stored_vector_store = vector_store
 
     return redirect(url_for("results"))
 
@@ -322,17 +322,17 @@ def results():
     )
 
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    question = request.form["question"]
+# @app.route("/ask", methods=["POST"])
+# def ask():
+#     question = request.form["question"]
 
-    qa_agent = PaperQAAgent(call_llm)
-    relevant_chunks = retrieve_semantic_chunks(
-        question, stored_embedder, stored_vector_store
-    )
+#     qa_agent = PaperQAAgent(call_llm)
+#     relevant_chunks = retrieve_semantic_chunks(
+#         question, stored_embedder, stored_vector_store
+#     )
 
-    answer = qa_agent.run(question, relevant_chunks)
-    return answer
+#     answer = qa_agent.run(question, relevant_chunks)
+#     return answer
 
 
 @app.route("/feedback")
