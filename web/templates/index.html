@@ -29,7 +29,11 @@
         </section>
 
         <section class="card">
-
+            {% if error %}
+<div class="error-message">
+    {{ error }}
+</div>
+{% endif %}
             <form action="/analyze" method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
 
                 <!-- Drag & Drop Upload Box -->

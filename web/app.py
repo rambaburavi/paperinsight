@@ -352,5 +352,11 @@ def feedback():
     return render_template("feedback.html")
 
 
+@app.errorhandler(413)
+def file_too_large(error):
+    return render_template(
+        "index.html",
+        error="PDF too large. Please upload a file smaller than 10 MB."
+    ), 413
 if __name__ == "__main__":
     app.run()
