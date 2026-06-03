@@ -114,6 +114,8 @@ def select_sections(chunks, allowed_sections, max_chunks=5):
     return selected[:max_chunks]
 
 # ================== PERFORMANCE CLEANER ==================
+import re
+
 def keep_best_metrics(metrics):
     best = {}
 
@@ -134,33 +136,42 @@ def keep_best_metrics(metrics):
 
         # Format 3: plain string "Accuracy: 98.4%"
         elif isinstance(item, str) and ":" in item:
-            parts = item.split(":")
+            parts = item.split(":", 1)
             metric_name = parts[0].strip()
             raw_value = parts[1].strip()
 
         if metric_name and raw_value:
 
-            cleaned = ''.join(c for c in str(raw_value) if c.isdigit() or c == '.')
-            if cleaned:
-                value = float(cleaned)
+            # Extract first valid number safely
+            numbers = re.findall(r"\d+\.\d+|\d+", str(raw_value))
 
-                compare_value = value * 100 if value <= 1 else value
+            if not numbers:
+                continue
 
-                key = metric_name.lower()
+            try:
+                value = float(numbers[0])
+            except (ValueError, TypeError):
+                continue
 
-                if key not in best or compare_value > best[key]["numeric"]:
-                    best[key] = {
-                        "metric": metric_name,
-                        "value": raw_value,
-                        "numeric": compare_value
-                    }
+            # Convert decimal metrics to percentage scale for comparison
+            compare_value = value * 100 if value <= 1 else value
+
+            key = metric_name.lower()
+
+            if key not in best or compare_value > best[key]["numeric"]:
+                best[key] = {
+                    "metric": metric_name,
+                    "value": raw_value,
+                    "numeric": compare_value
+                }
 
     return [
-        {"metric": v["metric"], "value": v["value"]}
+        {
+            "metric": v["metric"],
+            "value": v["value"]
+        }
         for v in best.values()
     ]
-
-
 
 # ================== ROUTES ==================
 @app.route("/", methods=["GET"])
