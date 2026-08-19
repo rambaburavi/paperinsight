@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 import os
 import json
+import re
 
 from loaders.file_detector import detect_file_type
 from loaders.pdf_loader import load_pdf
@@ -12,77 +13,93 @@ from core.normalize_text import normalize
 from core.build_chunks import build_structured_chunks
 from core.llm import call_llm
 
-# from core.embedder import Embedder
-# from core.vector_store import VectorStore
-# from core.retriever import retrieve_semantic_chunks
 
-from agents.section_agent import SectionUnderstandingAgent
-from agents.contribution_agent import ContributionExtractionAgent
-from agents.limitation_agent import LimitationAssumptionAgent
-from agents.explanation_agent import ExplanationAgent
-from agents.qa_agent import PaperQAAgent
+# ============================================================
+# APP SETUP
+# ============================================================
 
-
-# ================== APP SETUP ==================
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
+
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 stored_result = {}
 stored_level = "beginner"
-stored_chunks = []
-stored_embedder = None
-stored_vector_store = None
 
 
-# ================== SAFE JSON PARSER ==================
-import json
-import re
+# ============================================================
+# SAFE JSON PARSER
+# ============================================================
 
 def safe_json_parse(raw, fallback):
+    
     if not raw:
         return fallback
 
-    try:
-        # Extract JSON between first { and last }
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            cleaned = match.group(0)
-            return json.loads(cleaned)
-        else:
-            return fallback
-    except Exception:
+    raw = raw.strip()
+
+    raw = re.sub(
+        r"```json\s*",
+        "",
+        raw,
+        flags=re.IGNORECASE
+    )
+
+    raw = re.sub(
+        r"```\s*$",
+        "",
+        raw
+    ).strip()
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+
+    if start == -1 or end == -1 or end <= start:
+        print("JSON object not found.")
+        print("RAW OUTPUT:", raw)
         return fallback
 
+    try:
+        return json.loads(
+            raw[start:end + 1]
+        )
 
+    except json.JSONDecodeError as e:
 
-# ================== FALLBACK STRUCTURES ==================
-ABSTRACT_FALLBACK = {
-    "problem": "Not explicitly stated",
-    "dataset": "Not explicitly stated",
-    "method": "Not explicitly stated",
-    "model": "Not explicitly stated",
-    "evaluation_metrics": "Not explicitly stated",
-    "best_result": "Not explicitly stated",
-    "application_domain": "Not explicitly stated"
-}
+        print("JSON parsing failed:", e)
+        print("RAW OUTPUT:", raw)
 
-CONTRIBUTION_FALLBACK = {
+        return fallback
+
+# ============================================================
+# FALLBACK STRUCTURES
+# ============================================================
+
+ANALYSIS_FALLBACK = {
+    "abstract": (
+        "The abstract could not be extracted "
+        "from the available paper text."
+    ),
+    "introduction": (
+        "The introduction could not be extracted "
+        "from the available paper text."
+    ),
     "primary_contributions": [],
     "secondary_contributions": [],
-    "performance_summary": []
-}
-
-LIMITATION_FALLBACK = {
+    "performance_summary": [],
     "data_limitations": [],
     "methodological_risks": [],
     "generalization_risks": [],
     "key_assumptions": []
 }
 
+
 EXPLANATION_FALLBACK = {
-    "reliability": "Insufficient information for a confident judgment",
+    "reliability": (
+        "Insufficient information for a confident judgment."
+    ),
     "confidence_level": "Low",
     "when_to_use": [],
     "when_not_to_use": [],
@@ -90,242 +107,760 @@ EXPLANATION_FALLBACK = {
 }
 
 
-# ================== FILE LOADER ==================
+# ============================================================
+# FILE LOADER
+# ============================================================
+
 def load_input_file(file_path):
+
     ext = detect_file_type(file_path)
+
     if ext == ".pdf":
         return load_pdf(file_path)
-    elif ext == ".docx":
-        return load_docx(file_path)
-    elif ext in [".txt", ".md"]:
-        return load_text(file_path)
-    elif ext == ".zip":
-        return load_zip(file_path)
-    else:
-        raise ValueError("Unsupported file type")
 
-# ================== SECTION SELECTOR ==================
-def select_sections(chunks, allowed_sections, max_chunks=5):
-    selected = [
-        c for c in chunks
-        if c.get("section") in allowed_sections
-        and c.get("text")
-        and len(c["text"].strip()) > 50
-    ]
+    if ext == ".docx":
+        return load_docx(file_path)
+
+    if ext in [".txt", ".md"]:
+        return load_text(file_path)
+
+    if ext == ".zip":
+        return load_zip(file_path)
+
+    raise ValueError("Unsupported file type")
+
+
+# ============================================================
+# SECTION SELECTOR
+# ============================================================
+
+def select_sections(
+    chunks,
+    allowed_sections,
+    max_chunks=5
+):
+
+    allowed = {
+        section.lower().strip()
+        for section in allowed_sections
+    }
+
+    selected = []
+
+    for chunk in chunks:
+
+        section = str(
+            chunk.get("section", "")
+        ).lower().strip()
+
+        text = str(
+            chunk.get("text", "")
+        ).strip()
+
+        if (
+            section in allowed
+            and text
+            and len(text) > 50
+        ):
+            selected.append(chunk)
+
     return selected[:max_chunks]
 
-# ================== PERFORMANCE CLEANER ==================
-import re
 
-def keep_best_metrics(metrics):
-    best = {}
+# ============================================================
+# COMPACT TEXT BUILDER
+# ============================================================
+
+def build_evidence(chunks, max_chars):
+
+    pieces = []
+    current_length = 0
+
+    for chunk in chunks:
+
+        text = str(
+            chunk.get("text", "")
+        ).strip()
+
+        if not text:
+            continue
+
+        section = str(
+            chunk.get("section", "unknown")
+        ).strip()
+
+        piece = (
+            f"[SECTION: {section}]\n"
+            f"{text}"
+        )
+
+        if (
+            current_length + len(piece)
+            > max_chars
+        ):
+            break
+
+        pieces.append(piece)
+        current_length += len(piece)
+
+    return "\n\n".join(pieces)
+
+
+# ============================================================
+# PERFORMANCE CLEANER
+# ============================================================
+
+def clean_performance_metrics(metrics):
+    
+    cleaned = []
+
+    if not isinstance(metrics, list):
+        return cleaned
 
     for item in metrics:
 
-        metric_name = None
-        raw_value = None
+        if isinstance(item, dict):
 
-        # Format 1: {"metric":"Accuracy", "value":"98.4%"}
-        if isinstance(item, dict) and item.get("metric") and item.get("value"):
-            metric_name = item["metric"]
-            raw_value = item["value"]
+            metric = item.get("metric")
+            value = item.get("value")
 
-        # Format 2: {"accuracy":"98.4%"}
-        elif isinstance(item, dict) and "accuracy" in item:
-            metric_name = "Accuracy"
-            raw_value = item["accuracy"]
+            if metric and value:
+                cleaned.append({
+                    "metric": str(metric).strip(),
+                    "value": str(value).strip()
+                })
 
-        # Format 3: plain string "Accuracy: 98.4%"
-        elif isinstance(item, str) and ":" in item:
-            parts = item.split(":", 1)
-            metric_name = parts[0].strip()
-            raw_value = parts[1].strip()
+        elif isinstance(item, str):
 
-        if metric_name and raw_value:
+            if ":" in item:
 
-            # Extract first valid number safely
-            numbers = re.findall(r"\d+\.\d+|\d+", str(raw_value))
+                metric, value = item.split(":", 1)
 
-            if not numbers:
-                continue
+                cleaned.append({
+                    "metric": metric.strip(),
+                    "value": value.strip()
+                })
 
-            try:
-                value = float(numbers[0])
-            except (ValueError, TypeError):
-                continue
+    return cleaned
 
-            # Convert decimal metrics to percentage scale for comparison
-            compare_value = value * 100 if value <= 1 else value
+# ============================================================
+# FIRST LLM CALL
+# COMPLETE PAPER ANALYSIS
+# ============================================================
 
-            key = metric_name.lower()
+def analyze_paper_with_llm(evidence):
 
-            if key not in best or compare_value > best[key]["numeric"]:
-                best[key] = {
-                    "metric": metric_name,
-                    "value": raw_value,
-                    "numeric": compare_value
-                }
+    prompt = f"""
+You are PaperInsight, a research-paper analysis system.
 
-    return [
-        {
-            "metric": v["metric"],
-            "value": v["value"]
-        }
-        for v in best.values()
-    ]
+Analyze ONLY the supplied paper evidence.
 
-# ================== ROUTES ==================
+Your job is to create a compact but accurate structured
+understanding of the paper.
+
+IMPORTANT:
+- Use only information present in the supplied evidence.
+- Do not use outside knowledge.
+- Do not invent datasets, models, metrics, results, limitations,
+  or claims.
+- If information is genuinely unavailable, return an empty
+  list or a short "Not explicitly stated" statement.
+- Do not confuse the paper's motivation with its contribution.
+- Do not repeat the same idea across multiple sections.
+- Keep the output concise.
+- Return ONLY valid JSON.
+- Do not use markdown.
+- Do not add explanations outside JSON.
+
+Return EXACTLY this structure:
+
+{{
+  "abstract": "One concise paragraph summarizing the paper's
+research problem, proposed approach, and main finding.",
+
+  "introduction": "One concise paragraph explaining the
+motivation, existing problem, research gap, and proposed idea.",
+
+  "primary_contributions": [
+    "Most important contribution.",
+    "Second important contribution.",
+    "Third important contribution."
+  ],
+
+  "secondary_contributions": [
+    "Additional contribution.",
+    "Additional contribution."
+  ],
+
+  "performance_summary": [
+    {{
+      "metric": "Metric or benchmark name",
+      "value": "Reported result"
+    }}
+  ],
+
+  "data_limitations": [
+    "Limitation supported by the paper."
+  ],
+
+  "methodological_risks": [
+    "Methodological limitation or risk supported by the paper."
+  ],
+
+  "generalization_risks": [
+    "Generalization limitation supported by the paper."
+  ],
+
+  "key_assumptions": [
+    "Important assumption made by the approach."
+  ]
+}}
+
+QUALITY RULES:
+
+ABSTRACT:
+- 3 to 5 sentences.
+- Explain what problem the paper solves.
+- Explain what it proposes.
+- Mention the main experimental finding if available.
+
+INTRODUCTION:
+- 3 to 5 sentences.
+- Explain the problem.
+- Explain why existing approaches are insufficient.
+- Explain the research gap.
+- Explain what the paper proposes.
+- Do NOT copy the abstract.
+
+CONTRIBUTIONS:
+- Maximum 3 primary contributions.
+- Maximum 3 secondary contributions.
+- State actual contributions, not generic claims.
+
+PERFORMANCE:
+- Include only results explicitly reported in the evidence.
+- Preserve metric names and values.
+- Do not invent numbers.
+
+LIMITATIONS:
+- Only include limitations supported by the paper.
+- Do not manufacture limitations merely because something
+  "could" be a limitation.
+
+PAPER EVIDENCE:
+
+{evidence}
+"""
+
+    return call_llm(prompt)
+
+
+# ============================================================
+# SECOND LLM CALL
+# DECISION / EXPLANATION
+# ============================================================
+
+def generate_decision(analysis_data):
+
+    compact_json = json.dumps(
+        analysis_data,
+        ensure_ascii=False
+    )
+
+    prompt = f"""
+You are the decision-analysis component of PaperInsight.
+
+Use ONLY the structured paper analysis below.
+
+Do not introduce facts that are not present in it.
+
+Create a concise beginner-friendly decision summary.
+
+Return ONLY valid JSON.
+
+Required structure:
+
+{{
+  "reliability": "A concise 3-5 sentence assessment of how
+reliable the paper's evidence and conclusions appear.",
+
+  "confidence_level": "High / Moderate-High / Moderate /
+Low",
+
+  "when_to_use": [
+    "Appropriate use case.",
+    "Appropriate use case.",
+    "Appropriate use case."
+  ],
+
+  "when_not_to_use": [
+    "Situation where the approach may not be suitable.",
+    "Situation where the approach may not be suitable."
+  ],
+
+  "future_scope": "A concise paragraph describing future
+research directions that logically follow from the paper's
+limitations or findings."
+}}
+
+RULES:
+
+- Do not say the paper is universally reliable.
+- Base reliability on the evidence supplied.
+- Do not invent deployment results.
+- Do not invent future work that contradicts the paper.
+- Keep confidence realistic.
+- Maximum 4 items for when_to_use.
+- Maximum 4 items for when_not_to_use.
+- Keep everything concise.
+
+STRUCTURED PAPER ANALYSIS:
+
+{compact_json}
+"""
+
+    return call_llm(prompt)
+
+
+# ============================================================
+# HOME
+# ============================================================
+
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
 
+    return render_template(
+        "index.html"
+    )
+
+
+# ============================================================
+# ANALYZE
+# ============================================================
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    global stored_result, stored_level
-    global stored_chunks, stored_embedder, stored_vector_store
 
-    file = request.files["paper"]
-    stored_level = request.form.get("level", "beginner")
+    global stored_result
+    global stored_level
 
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # --------------------------------------------------------
+    # FILE
+    # --------------------------------------------------------
+
+    file = request.files.get("paper")
+
+    if not file or not file.filename:
+        return redirect(
+            url_for("index")
+        )
+
+    stored_level = request.form.get(
+        "level",
+        "beginner"
+    )
+
+    file_path = os.path.join(
+        UPLOAD_FOLDER,
+        file.filename
+    )
+
     file.save(file_path)
 
-    # -------- Pipeline --------
-    raw_text = load_input_file(file_path)
-    clean_text = normalize(raw_text)
-    chunks = build_structured_chunks(clean_text)
-    
-    # -------- DEBUG (keep this) --------
-    # print("Detected sections:", sorted(set(c["section"] for c in chunks)))
-    # print("Total chunks:", len(chunks))
-
-    # -------- FIX-1: POSITION-BASED CHUNKING --------
-    # total = len(chunks)
-
-    # overview_chunks = [c for c in chunks if c["section"] == "abstract"][:6]
-
-    # method_chunks = [c for c in chunks if c["section"] == "method"][:6]
-
-    # result_chunks = [c for c in chunks if c["section"] == "results"][:6]
-
-    # limitation_chunks = [c for c in chunks if c["section"] in ["discussion", "limitations", "conclusion"]][:6]
-    total = len(chunks)
-
-    # 1️⃣ Overview
-    overview_chunks = select_sections(
-        chunks, ["abstract", "introduction"], max_chunks=5
+    print(
+        "\n========================================"
     )
 
-    if not overview_chunks:
-        overview_chunks = chunks[:5]
-
-    # 2️⃣ Method
-    method_chunks = select_sections(
-        chunks, ["method", "methodology", "approach"], max_chunks=5
+    print(
+        "STARTING PAPER ANALYSIS"
     )
 
-    if not method_chunks:
-        method_chunks = chunks[int(total * 0.2): int(total * 0.4)]
-
-    # 3️⃣ Results
-    result_chunks = select_sections(
-        chunks, ["results", "experiment"], max_chunks=5
+    print(
+        "========================================"
     )
 
-    if not result_chunks:
-        result_chunks = chunks[int(total * 0.4): int(total * 0.6)]
+    try:
 
-    # 4️⃣ Limitations
-    limitation_chunks = select_sections(
-        chunks, ["limitations", "discussion", "conclusion"], max_chunks=5
-    )
+        # ====================================================
+        # 1. LOAD
+        # ====================================================
 
-    if not limitation_chunks:
-        limitation_chunks = chunks[int(total * 0.7):]
-
-    # print("Detected sections:", sorted(set(c["section"] for c in chunks)))
-    # print("Overview chunks:", len(overview_chunks))
-
-    # print("Overview chunks:", len(overview_chunks))
-    # print("Method chunks:", len(method_chunks))
-    # print("Result chunks:", len(result_chunks))
-    # print("Limitation chunks:", len(limitation_chunks))
-
-    # # 🔍 DEBUG (keep for now)
-    # print("Detected sections:", sorted(set(c["section"] for c in chunks)))
-    # print("Sample chunk text:", chunks[0]["text"][:300])
-
-    # print("Total chunks:", len(chunks))
-
-    # # ===== TEMPORARY POSITION-BASED SELECTION (ROBUST) =====
-    # overview_chunks = chunks[:4]
-    # method_chunks = chunks[4:10]
-    # result_chunks = chunks[10:16]
-    # limitation_chunks = chunks[-6:]
-
-    # print("Overview chunks:", len(overview_chunks))
-    # print("Method chunks:", len(method_chunks))
-    # print("Result chunks:", len(result_chunks))
-    # print("Limitation chunks:", len(limitation_chunks))
-
-    # -------- Agents --------
-    section_agent = SectionUnderstandingAgent(call_llm)
-    contribution_agent = ContributionExtractionAgent(call_llm)
-    limitation_agent = LimitationAssumptionAgent(call_llm)
-    explanation_agent = ExplanationAgent(call_llm, stored_level)
-
-    overview_raw = section_agent.run(overview_chunks)
-    # 🔒 HARD LIMIT: max 5 chunks total
-    contribution_chunks = (overview_chunks+method_chunks + result_chunks)
-    contribution_raw = contribution_agent.run(contribution_chunks)
-    #print("RAW CONTRIBUTION OUTPUT:", contribution_raw)
-    limitation_raw = limitation_agent.run(limitation_chunks)
-    explanation_raw = explanation_agent.run(
-        overview_raw, contribution_raw, limitation_raw
-    )
-
-    # -------- Safe Parsing --------
-    abstract_data = safe_json_parse(overview_raw, ABSTRACT_FALLBACK)
-    contribution_data = safe_json_parse(contribution_raw, CONTRIBUTION_FALLBACK)
-    limitation_data = safe_json_parse(limitation_raw, LIMITATION_FALLBACK)
-    explanation_data = safe_json_parse(explanation_raw, EXPLANATION_FALLBACK)
-
-    # 🔥 Clean performance metrics (keep highest per metric)
-    if "performance_summary" in contribution_data:
-        contribution_data["performance_summary"] = keep_best_metrics(
-            contribution_data.get("performance_summary", [])
+        raw_text = load_input_file(
+            file_path
         )
-    print("CLEANED PERFORMANCE:", contribution_data.get("performance_summary"))
 
-    stored_result = {
-        "abstract": abstract_data,
-    "contributions": contribution_data,
-    "limitations": limitation_data,
-    "explanation": explanation_data
-}
+        # ====================================================
+        # 2. NORMALIZE
+        # ====================================================
+
+        clean_text = normalize(
+            raw_text
+        )
+
+        # ====================================================
+        # 3. CHUNK
+        # ====================================================
+
+        chunks = build_structured_chunks(
+            clean_text
+        )
+
+        total = len(chunks)
+
+        print(
+            "Total chunks:",
+            total
+        )
+
+        detected_sections = sorted(
+            set(
+                str(
+                    chunk.get(
+                        "section",
+                        ""
+                    )
+                ).lower().strip()
+
+                for chunk in chunks
+            )
+        )
+
+        print(
+            "Detected sections:",
+            detected_sections
+        )
+
+        # ====================================================
+        # 4. SELECT ONLY IMPORTANT EVIDENCE
+        # ====================================================
+
+        overview_chunks = select_sections(
+            chunks,
+            [
+                "abstract",
+                "introduction",
+                "intro"
+            ],
+            max_chunks=4
+        )
+
+        method_chunks = select_sections(
+            chunks,
+            [
+                "method",
+                "methodology",
+                "approach"
+            ],
+            max_chunks=3
+        )
+
+        result_chunks = select_sections(
+            chunks,
+            [
+                "results",
+                "result",
+                "experiment",
+                "experiments",
+                "evaluation"
+            ],
+            max_chunks=5
+        )
+
+        limitation_chunks = select_sections(
+            chunks,
+            [
+                "limitations",
+                "limitation",
+                "discussion",
+                "conclusion",
+                "future work",
+                "future_work"
+            ],
+            max_chunks=4
+        )
+
+        # ----------------------------------------------------
+        # If section detection misses something, use position
+        # based evidence as a small fallback.
+        # ----------------------------------------------------
+
+        if not overview_chunks:
+            overview_chunks = chunks[:4]
+
+        if not method_chunks:
+            method_chunks = chunks[
+                int(total * 0.20):
+                int(total * 0.35)
+            ][:3]
+
+        if not result_chunks:
+            result_chunks = chunks[
+                int(total * 0.35):
+                int(total * 0.60)
+            ][:5]
+
+        if not limitation_chunks:
+            limitation_chunks = chunks[
+                int(total * 0.65):
+            ][:4]
+
+        print(
+            "Overview chunks:",
+            len(overview_chunks)
+        )
+
+        print(
+            "Method chunks:",
+            len(method_chunks)
+        )
+
+        print(
+            "Result chunks:",
+            len(result_chunks)
+        )
+
+        print(
+            "Limitation chunks:",
+            len(limitation_chunks)
+        )
+
+        # ====================================================
+        # 5. BUILD COMPACT EVIDENCE
+        # ====================================================
+
+        selected_chunks = (
+            overview_chunks
+            + method_chunks
+            + result_chunks
+            + limitation_chunks
+        )
+
+        # Remove duplicate chunks while preserving order
+        unique_chunks = []
+        seen_text = set()
+
+        for chunk in selected_chunks:
+
+            text = str(
+                chunk.get("text", "")
+            ).strip()
+
+            if not text:
+                continue
+
+            key = text[:300]
+
+            if key in seen_text:
+                continue
+
+            seen_text.add(key)
+            unique_chunks.append(chunk)
+
+        evidence = build_evidence(
+    unique_chunks,
+    max_chars=15000
+)
+
+        print(
+            "Evidence characters:",
+            len(evidence)
+        )
+
+        # ====================================================
+        # 6. LLM CALL #1
+        # ====================================================
+
+        print(
+            "\nRunning Paper Analysis Agent..."
+        )
+
+        analysis_raw = analyze_paper_with_llm(
+            evidence
+        )
+
+        print(
+            "Paper Analysis Agent completed."
+        )
+
+        print(
+            "\n========== ANALYSIS RAW =========="
+        )
+
+        print(
+            analysis_raw
+        )
+
+        # ====================================================
+        # 7. PARSE ANALYSIS
+        # ====================================================
+
+        analysis_data = safe_json_parse(
+            analysis_raw,
+            ANALYSIS_FALLBACK
+        )
+
+        # ====================================================
+        # 8. LLM CALL #2
+        # ====================================================
+
+        print(
+            "\nRunning Decision Agent..."
+        )
+
+        explanation_raw = generate_decision(
+            analysis_data
+        )
+
+        print(
+            "Decision Agent completed."
+        )
+
+        # ====================================================
+        # 9. PARSE DECISION
+        # ====================================================
+
+        explanation_data = safe_json_parse(
+            explanation_raw,
+            EXPLANATION_FALLBACK
+        )
+
+        # ====================================================
+        # 10. BUILD EXISTING DASHBOARD FORMAT
+        # ====================================================
+
+        contribution_data = {
+            "primary_contributions": analysis_data.get(
+                "primary_contributions",
+                []
+            ),
+
+            "secondary_contributions": analysis_data.get(
+                "secondary_contributions",
+                []
+            ),
+
+            "performance_summary": clean_performance_metrics(
+                analysis_data.get(
+                    "performance_summary",
+                    []
+                )
+            )
+        }
+
+        limitation_data = {
+            "data_limitations": analysis_data.get(
+                "data_limitations",
+                []
+            ),
+
+            "methodological_risks": analysis_data.get(
+                "methodological_risks",
+                []
+            ),
+
+            "generalization_risks": analysis_data.get(
+                "generalization_risks",
+                []
+            ),
+
+            "key_assumptions": analysis_data.get(
+                "key_assumptions",
+                []
+            )
+        }
+
+        # ====================================================
+        # 11. STORE
+        # ====================================================
+
+        stored_result = {
+            "abstract": {
+                "abstract": analysis_data.get(
+                    "abstract",
+                    ANALYSIS_FALLBACK["abstract"]
+                ),
+
+                "introduction": analysis_data.get(
+                    "introduction",
+                    ANALYSIS_FALLBACK["introduction"]
+                )
+            },
+
+            "contributions": contribution_data,
+
+            "limitations": limitation_data,
+
+            "explanation": explanation_data
+        }
+
+        print(
+            "\nCLEANED PERFORMANCE:"
+        )
+
+        print(
+            contribution_data[
+                "performance_summary"
+            ]
+        )
+
+        print(
+            "\n========================================"
+        )
+
+        print(
+            "PAPER ANALYSIS COMPLETED"
+        )
+
+        print(
+            "========================================\n"
+        )
+
+        return redirect(
+            url_for("results")
+        )
+
+    except Exception as e:
+
+        print(
+            "\n========================================"
+        )
+
+        print(
+            "ANALYSIS ERROR"
+        )
+
+        print(
+            e
+        )
+
+        print(
+            "========================================\n"
+        )
+
+        return render_template(
+            "index.html",
+            error=(
+                "Paper analysis failed. "
+                "Please try again."
+            )
+        )
 
 
-    # -------- Embeddings for Q&A --------
-    # embedder = Embedder()
-    # valid_chunks = [c for c in chunks if c.get("text", "").strip()]
-    # texts = [c["text"] for c in valid_chunks]
+# ============================================================
+# RESULTS
+# ============================================================
 
-    # embeddings = embedder.embed(texts)
-    # vector_store = VectorStore(dim=embeddings.shape[1])
-    # vector_store.add(embeddings, valid_chunks)
-
-    # stored_chunks = valid_chunks
-    # stored_embedder = embedder
-    # stored_vector_store = vector_store
-
-    return redirect(url_for("results"))
-
-
-@app.route("/results", methods=["GET"])
+@app.route(
+    "/results",
+    methods=["GET"]
+)
 def results():
+
     if not stored_result:
-        return redirect(url_for("index"))
+
+        return redirect(
+            url_for("index")
+        )
 
     return render_template(
         "results.html",
@@ -334,29 +869,38 @@ def results():
     )
 
 
-# @app.route("/ask", methods=["POST"])
-# def ask():
-#     question = request.form["question"]
-
-#     qa_agent = PaperQAAgent(call_llm)
-#     relevant_chunks = retrieve_semantic_chunks(
-#         question, stored_embedder, stored_vector_store
-#     )
-
-#     answer = qa_agent.run(question, relevant_chunks)
-#     return answer
-
+# ============================================================
+# FEEDBACK
+# ============================================================
 
 @app.route("/feedback")
 def feedback():
-    return render_template("feedback.html")
 
+    return render_template(
+        "feedback.html"
+    )
+
+
+# ============================================================
+# FILE TOO LARGE
+# ============================================================
 
 @app.errorhandler(413)
 def file_too_large(error):
+
     return render_template(
         "index.html",
-        error="PDF too large. Please upload a file smaller than 10 MB."
+        error=(
+            "PDF too large. "
+            "Please upload a file smaller than 10 MB."
+        )
     ), 413
+
+
+# ============================================================
+# RUN
+# ============================================================
+
 if __name__ == "__main__":
+
     app.run()

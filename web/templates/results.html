@@ -30,18 +30,20 @@
         </section>
 
         <!-- Paper at a Glance -->
-        <section class="card">
-            <h3> Paper at a Glance</h3>
-            <ul class="insight-list">
-                <li><strong>Problem:</strong> {{ result.abstract.problem }}</li>
-                <li><strong>Dataset:</strong> {{ result.abstract.dataset }}</li>
-                <li><strong>Method:</strong> {{ result.abstract.method }}</li>
-                <li><strong>Model:</strong> {{ result.abstract.model }}</li>
-                <li><strong>Evaluation Metrics:</strong> {{ result.abstract.evaluation_metrics }}</li>
-                <li><strong>Best Result:</strong> {{ result.abstract.best_result }}</li>
-                <li><strong>Application Domain:</strong> {{ result.abstract.application_domain }}</li>
-            </ul>
-        </section>
+        <!-- Abstract & Introduction -->
+<section class="card">
+    <h3>Abstract & Introduction</h3>
+
+    <p><strong>Abstract</strong></p>
+    <p class="insight-text">
+        {{ result.abstract.abstract }}
+    </p>
+
+    <p><strong>Introduction</strong></p>
+    <p class="insight-text">
+        {{ result.abstract.introduction }}
+    </p>
+</section>
 
         <!-- Contributions -->
         <section class="card">

@@ -1,25 +1,35 @@
-import os
 from groq import Groq
+import os
 
 client = Groq(
     api_key=os.environ.get("GROQ_API_KEY")
 )
 
+MODEL = "openai/gpt-oss-20b"
+
+
 def call_llm(prompt):
+
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=MODEL,
         messages=[
             {
                 "role": "system",
-                "content": "You are a precise and helpful research assistant."
+                "content": (
+                    "You are a precise research paper "
+                    "analysis assistant. "
+                    "Use only the supplied paper content. "
+                    "Do not invent facts. "
+                    "Always complete the requested JSON."
+                )
             },
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        temperature=0.2,
-        max_tokens=1024
+        temperature=0.1,
+        max_tokens=2048
     )
 
     return response.choices[0].message.content.strip()
